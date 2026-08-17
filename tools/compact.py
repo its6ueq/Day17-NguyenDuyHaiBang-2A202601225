@@ -57,33 +57,70 @@ SRC = DATA / "gold_events"
 DST = DATA / "gold_events_v2"
 
 
+# Ba quyết định của layout mới:
+#
+#   PARTITION_BY (event_date)   Dashboard lọc theo NGÀY và theo KHÁCH HÀNG.
+#                               event_date có 14 giá trị -> 14 thư mục, engine
+#                               loại 13/14 dữ liệu chỉ bằng đường dẫn, không mở
+#                               file nào. customer_name có 650 giá trị: partition
+#                               theo cột đó lại đẻ ra 650 thư mục file tí hon,
+#                               tức tái tạo đúng small-file problem đang sửa.
+#
+#   ORDER BY event_date, customer_name, event_time
+#                               Trong một partition, hàng của cùng một khách nằm
+#                               liền nhau, nên min/max customer_name của mỗi row
+#                               group hẹp và engine bỏ qua được row group không
+#                               chứa 'ACME'. Dữ liệu nguồn xếp ngẫu nhiên nên
+#                               min/max của mọi row group đều là A..Z — thống kê
+#                               tồn tại nhưng vô dụng.
+#
+#   ROW_GROUP_SIZE 2048         Một ngày ~9.340 hàng. Để mặc định 122.880 thì cả
+#                               ngày nằm gọn trong MỘT row group, min/max phủ
+#                               toàn bộ khách hàng và mất hết tác dụng lọc.
+#                               2.048 hàng -> ~5 row group/ngày, đủ mịn để cắt
+#                               mà chưa nhỏ tới mức quay lại small-file problem.
+PARTITION_COL = "event_date"
+ORDER_BY = "event_date, customer_name, event_time"
+ROW_GROUP_SIZE = 2048
+
+
 def main() -> int:
     con = duckdb.connect()
 
     n_src = len(list(SRC.glob("*.parquet")))
     print(f"  nguồn : {SRC}  ({n_src:,} file)")
 
-    # TODO(nhiệm vụ 4): hiện thực khung COPY ... TO ... ở phần docstring.
-    #
-    #   con.execute(f"""
-    #       copy (
-    #           select * from read_parquet('{SRC}/*.parquet')
-    #           order by ...
-    #       ) to '{DST}' (
-    #           format parquet,
-    #           partition_by (...),
-    #           overwrite_or_ignore,
-    #           row_group_size ...
-    #       )
-    #   """)
-    #
-    # Sau đó kiểm tra không mất hàng nào:
-    #
-    #   assert <số row dataset cũ> == <số row dataset mới>
+    src_rows = con.execute(
+        f"select count(*) from read_parquet('{SRC}/*.parquet')"
+    ).fetchone()[0]
 
-    print("\n  tools/compact.py chưa được hiện thực — đây là nhiệm vụ 4.")
-    print("  Mở file này, đọc phần KHUNG THỰC HIỆN ở đầu file và điền vào TODO.")
-    print("  Hướng dẫn từng bước: GUIDE.md mục 4.\n")
+    con.execute(f"""
+        copy (
+            select *
+            from read_parquet('{SRC}/*.parquet')
+            order by {ORDER_BY}
+        ) to '{DST}' (
+            format          parquet,
+            partition_by    ({PARTITION_COL}),
+            overwrite_or_ignore,
+            row_group_size  {ROW_GROUP_SIZE}
+        )
+    """)
+
+    dst_files = sorted(DST.glob("**/*.parquet"))
+    dst_rows = con.execute(
+        f"select count(*) from read_parquet('{DST}/**/*.parquet', hive_partitioning = true)"
+    ).fetchone()[0]
+
+    assert src_rows == dst_rows, f"mất hàng: {src_rows:,} -> {dst_rows:,}"
+
+    print(f"  đích  : {DST}  ({len(dst_files):,} file)")
+    print(f"  số hàng: {src_rows:,} -> {dst_rows:,}  (khớp)")
+    print(f"  partition_by({PARTITION_COL})  order by {ORDER_BY}  "
+          f"row_group_size {ROW_GROUP_SIZE:,}")
+    print("\n  bước tiếp: sửa queries/dashboard.sql trỏ vào dataset mới rồi "
+          "chạy `make explain`.\n")
+    con.close()
     return 0
 
 

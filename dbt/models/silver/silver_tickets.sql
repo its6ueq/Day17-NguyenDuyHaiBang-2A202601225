@@ -46,6 +46,12 @@ with ranked as (
         ) as _rn
     from {{ source('bronze', 'bronze_tickets_cdc') }}
 
+    -- LỌC TRƯỚC, XẾP HẠNG SAU: loại BẢN GHI hỏng khỏi luồng CDC ngay tại đây,
+    -- để row_number() xếp hạng trên phần dữ liệu còn hợp lệ. Ticket có bản ghi
+    -- mới nhất hỏng vì thế vẫn giữ được trạng thái hợp lệ của lần cập nhật
+    -- trước, thay vì biến mất khỏi Silver.
+    where {{ normalize_priority('priority_raw') }} is not null
+
 ),
 
 latest as (select * from ranked where _rn = 1)

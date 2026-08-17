@@ -30,11 +30,15 @@ with DAG(
     default_args=DEFAULT_ARGS,
     tags=["ai-support", "daily"],
     # ------------------------------------------------------------------
-    # TODO (nhiệm vụ 1): hai tham số dưới đây quyết định chuyện gì xảy ra
-    # khi ai đó bấm Clear Task, và khi DAG bị dồn nhiều lần chạy cùng lúc.
-    # Đọc lại triệu chứng ở phiếu #1041 rồi đặt lại cho đúng.
-    catchup=True,
-    # max_active_runs=?
+    # catchup=False: khi DAG tạm dừng rồi bật lại, scheduler không dồn hàng
+    # chục lần chạy quá khứ cùng lúc — mỗi lần chạy đó là một lượt ghi nữa
+    # vào Gold.
+    # max_active_runs=1: hai lần chạy không bao giờ ghi đồng thời vào cùng
+    # một partition, nên Clear Task không chồng lên lượt đang chạy.
+    # Hai tham số này giới hạn SỐ LẦN ghi; tính idempotent của transform mới
+    # là thứ làm cho việc ghi lại vô hại.
+    catchup=False,
+    max_active_runs=1,
     # ------------------------------------------------------------------
 ) as dag:
 

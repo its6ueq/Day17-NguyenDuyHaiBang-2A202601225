@@ -29,9 +29,16 @@
 --   rõ hai vấn đề này tách nhau.
 -- ---------------------------------------------------------------------------
 
+{# Lookback = 3 ngày. Đo trên bronze_events: độ trễ (_ingested_at - event_time)
+   có P99 = 65.4 giờ và max = 70.7 giờ, tức tối đa 3 ngày lịch. Lùi 3 ngày phủ
+   hết đuôi phân bố; lùi thêm nữa chỉ tốn công tính lại ở MỌI lượt chạy sau. #}
+{% set lookback_days = 3 %}
+
 {{ config(
-    materialized     = 'incremental',
-    on_schema_change = 'fail'
+    materialized         = 'incremental',
+    unique_key           = ['event_date', 'customer_id'],
+    incremental_strategy = 'merge',
+    on_schema_change     = 'fail'
 ) }}
 
 select
@@ -49,7 +56,11 @@ select
 from {{ ref('silver_events') }}
 
 {% if is_incremental() %}
-where event_date > (select max(event_date) from {{ this }})
+-- Mốc cũ `> max(event_date)` bỏ qua vĩnh viễn mọi bản ghi tới muộn: ngày của
+-- chúng đã nằm dưới mốc ngay khi chúng vào kho. Lùi mốc lại {{ lookback_days }}
+-- ngày để những ngày quá khứ được tính lại khi có dữ liệu bổ sung.
+where event_date >= (select max(event_date) from {{ this }})
+                    - interval {{ lookback_days }} day
 {% endif %}
 
 group by 1, 2, 3, 4

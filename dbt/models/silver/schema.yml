@@ -20,7 +20,7 @@ models:
     #   2. bỏ comment khối tests: ở cột priority bên dưới và điền `values`
     config:
       contract:
-        enforced: false # <- TODO(nhiệm vụ 3): đổi thành true
+        enforced: true
 
     columns:
       - name: ticket_id
@@ -36,14 +36,12 @@ models:
       - name: priority
         data_type: integer
         description: "1 = urgent … 4 = low. Contract với team backend."
-        # TODO(nhiệm vụ 3): bỏ comment bốn dòng dưới và điền danh sách giá trị
-        # hợp lệ. `quote: false` vì đây là số, không phải chuỗi.
-        #
-        # tests:
-        #   - not_null
-        #   - accepted_values:
-        #       values: [...]
-        #       quote: false
+        # contract ràng buộc KIỂU (integer); miền giá trị 1..4 là việc của test.
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4]
+              quote: false
       - name: category
         data_type: varchar
       - name: channel
@@ -68,6 +66,12 @@ models:
     description: >
       Bản ghi CDC bị contract từ chối. Grain: 1 hàng / 1 bản ghi CDC.
       Pipeline KHÔNG dừng khi gặp bản ghi lỗi — nó rơi vào đây.
+    columns:
+      - name: ticket_id
+        tests: [not_null]
+      - name: reject_reason
+        description: "Lý do bị loại, để người trực phân loại nhanh."
+        tests: [not_null]
 
   # ---------------------------------------------------------------- events
   - name: silver_events
